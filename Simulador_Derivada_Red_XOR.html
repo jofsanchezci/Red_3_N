@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>La derivada en una red neuronal XOR</title>
+<style>
+:root{color-scheme:light;--ink:#172d3c;--muted:#4d6470;--line:#d4dfdd;--teal:#006c5a;--orange:#a44721;--paper:#f4f6ef}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--paper);color:var(--ink);line-height:1.5}
+main{max-width:1200px;margin:auto;padding:clamp(18px,4vw,52px)}header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:22px}
+.eyebrow{letter-spacing:.12em;font-size:.75rem;text-transform:uppercase;font-weight:750;color:var(--teal)}
+h1{font-size:clamp(2rem,5vw,3.7rem);line-height:1.05;letter-spacing:-.05em;margin:.24em 0}h2{font-size:1.23rem;margin:0 0 8px}p{margin:.35em 0 .8em}
+.caption,small{color:var(--muted)}.grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
+.panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:clamp(12px,2vw,22px);min-width:0}.left{grid-column:1}.right{grid-column:2}.explore,.train{grid-row:1}.history{grid-row:2}.lower{grid-row:2;display:grid;gap:16px;align-self:start}
+fieldset{border:0;padding:0;margin:0;min-width:0}label{font-weight:650}button,select,input{font:inherit}
+button,select{padding:.5rem .65rem;border:1px solid #8a9f9d;border-radius:8px;background:white;color:var(--ink)}
+button{cursor:pointer;font-weight:680}button.primary{background:var(--teal);color:white;border-color:var(--teal)}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a44721;outline-offset:2px}
+.control{display:grid;gap:.25rem;margin:.75rem 0}.inline,.buttons,.legend{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem}
+input[type=range]{width:100%;accent-color:var(--teal);margin:0}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.metric{background:#edf5f0;border-radius:9px;padding:.55rem;font-size:.79rem}.metric strong{display:block;font-size:clamp(.8rem,1.9vw,1.14rem);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+svg{display:block;width:100%;height:auto}.legend{font-size:.83rem;color:var(--muted)}.legend span::before{content:"";display:inline-block;width:16px;margin-right:5px;border-bottom:3px solid var(--teal);vertical-align:middle}.legend .tan::before{border-bottom:3px dashed var(--orange)}.legend .sec::before{border-bottom:2px dotted #6c4ca1}
+table{width:100%;border-collapse:collapse;text-align:right;font-size:.86rem;font-variant-numeric:tabular-nums}th,td{padding:.36rem .3rem;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}th{color:var(--muted)}tr.selected{background:#edf5f0}tbody tr:last-child td{border-bottom:0}
+.status{min-height:3em;margin:.7rem 0 0}.formula{background:#edf5f0;border-radius:8px;padding:.6rem;overflow-wrap:anywhere}details{margin-top:.75rem}summary{cursor:pointer;font-weight:680}.tablewrap{overflow:auto}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.grid>*{grid-row:auto;grid-column:1}}@media(max-width:380px){.metrics{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">Fundamentos matemáticos y estadísticos para IA</div>
+  <h1>La derivada en una red neuronal</h1>
+  <p>Explora cómo cambia la pérdida al mover un parámetro y cómo usa esa pendiente una red de tres neuronas para aprender XOR.</p>
+</header>
+<div class="grid">
+    <section class="panel left explore">
+      <h2>1. Explora la pendiente de la pérdida</h2>
+      <p class="caption">La curva varía solo el parámetro elegido. Los otros ocho permanecen fijos en los valores de la época actual.</p>
+      <div class="inline"><label for="parameter">Parámetro</label><select id="parameter"></select></div>
+      <div class="control">
+        <label for="probe">Desplazamiento desde el valor entrenado <output id="offset"></output></label>
+        <input id="probe" type="range" min="-1" max="1" step=".01" value="0">
+      </div>
+      <div class="control">
+        <label for="epsilon">Distancia <i>h</i> para la secante <output id="spacing"></output></label>
+        <input id="epsilon" type="range" min=".01" max=".75" step=".01" value=".35">
+      </div>
+      <svg id="slice" viewBox="0 0 600 280" role="img" aria-label="Pérdida en función del parámetro con la tangente y la secante"></svg>
+      <div class="legend"><span>Pérdida</span><span class="tan">Tangente</span><span class="sec">Secante entre θ − h y θ + h</span></div>
+      <div class="metrics">
+        <div class="metric">Parámetro explorado<strong id="point"></strong></div>
+        <div class="metric">Pendiente exacta<strong id="slope"></strong></div>
+        <div class="metric">Pendiente secante<strong id="secant"></strong></div>
+      </div>
+      <p id="direction"></p>
+      <details>
+        <summary>Ver la regla de la cadena</summary>
+        <p class="caption">Para cada fila, e = predicción − objetivo, δ₁ = e · v1 · (1 − h₁²) y δ₂ = e · v2 · (1 − h₂²). La pendiente exacta es el promedio de las cuatro contribuciones en el punto explorado.</p>
+        <p class="formula" id="chain"></p>
+        <table><thead><tr><th scope="col">Entrada</th><th scope="col">Residuo e</th><th scope="col">Derivada individual</th></tr></thead><tbody id="contributions"></tbody></table>
+      </details>
+    </section>
+    <section class="panel right train">
+      <h2>2. Aplica descenso por gradiente</h2>
+      <p class="caption">Cada paso comienza en el estado entrenado y actualiza los nueve parámetros a la vez. El desplazamiento de la gráfica sirve para explorar la curva.</p>
+      <div class="control">
+        <label for="rate">Tasa de aprendizaje η <output id="rateValue"></output></label>
+        <input id="rate" type="range" min=".01" max="2" step=".01" value=".1">
+      </div>
+      <div class="buttons">
+        <button class="primary" id="step">Un paso</button><button id="train">+100 épocas</button><button id="reset">Reiniciar</button>
+      </div>
+      <p id="status" class="status" role="status"></p>
+      <div class="metrics">
+        <div class="metric">Época<strong id="epoch"></strong></div>
+        <div class="metric">Pérdida actual<strong id="currentLoss"></strong></div>
+        <div class="metric">Pérdida tras un paso<strong id="nextLoss"></strong></div>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th scope="col">Parám.</th><th scope="col">Actual</th><th scope="col">Gradiente</th><th scope="col">Siguiente</th></tr></thead>
+        <tbody id="weights"></tbody>
+      </table></div>
+    </section>
+    <section class="panel left history">
+      <h2>3. Observa el entrenamiento</h2>
+      <p class="caption">La curva registra la pérdida promedio por época. El eje vertical usa escala logarítmica para distinguir valores cercanos a cero.</p>
+      <svg id="history" viewBox="0 0 600 220" role="img" aria-label="Evolución de la pérdida de entrenamiento por época"></svg>
+    </section>
+  <div class="right lower">
+    <section class="panel">
+      <h2>La red 2–2–1</h2>
+      <svg viewBox="0 0 360 143" role="img" aria-label="Dos entradas conectadas con dos neuronas tanh y una salida lineal">
+        <g stroke="#799891" stroke-width="1.5" fill="none"><path d="M57 43L161 43M57 43L161 100M57 100L161 43M57 100L161 100M200 43L300 72M200 100L300 72"/></g>
+        <g fill="#edf5f0" stroke="#006c5a"><circle cx="40" cy="43" r="17"/><circle cx="40" cy="100" r="17"/><circle cx="180" cy="43" r="20"/><circle cx="180" cy="100" r="20"/><circle cx="320" cy="72" r="20"/></g>
+        <g fill="#172d3c" text-anchor="middle" font-size="15"><text x="40" y="48">x₁</text><text x="40" y="105">x₂</text><text x="180" y="48">h₁</text><text x="180" y="105">h₂</text><text x="320" y="77">ŷ</text><text x="40" y="137">Entradas</text><text x="180" y="137">tanh</text><text x="320" y="137">Lineal</text></g>
+      </svg>
+      <table><thead><tr><th scope="col">Entrada</th><th scope="col">XOR</th><th scope="col">Predicción</th></tr></thead><tbody id="predictions"></tbody></table>
+      <p><small>Pérdida por ejemplo = (ŷ − y)²/2. Se promedian los cuatro ejemplos.</small></p>
+    </section>
+    <section class="panel">
+      <h2>Prueba para clase</h2>
+      <p>Con <strong>w11</strong> seleccionado, acerca <i>h</i> a cero y compara las pendientes. Después reinicia y prueba un paso con <strong>η = 0.10</strong> y otro con <strong>η = 2.00</strong>, cada uno desde la época 0.</p>
+    </section>
+  </div>
+</div>
+</main>
+<script>
+"use strict";
+const data = [[0,0,0],[0,1,1],[1,0,1],[1,1,0]];
+const initial = {w11:.5,w12:.3,b1:-.2,w21:-.4,w22:.6,b2:.1,v1:.7,v2:-.5,b3:0};
+const names = Object.keys(initial);
+const formulas = {w11:"δ₁ · x₁",w12:"δ₁ · x₂",b1:"δ₁",w21:"δ₂ · x₁",w22:"δ₂ · x₂",b2:"δ₂",v1:"e · h₁",v2:"e · h₂",b3:"e"};
+const $ = id => document.getElementById(id);
+const show = (id, text) => { $(id).textContent = text; };
+function fmt(value, digits=5) {
+  if (!Number.isFinite(value)) return "Fuera de rango";
+  if (value !== 0 && (Math.abs(value) < 10 ** -digits || Math.abs(value) >= 1e5)) {
+    return value.toExponential(2);
+  }
+  return value.toFixed(digits);
+}
+function forward(p, [x1,x2,y]) {
+  const h1 = Math.tanh(p.w11*x1 + p.w12*x2 + p.b1);
+  const h2 = Math.tanh(p.w21*x1 + p.w22*x2 + p.b2);
+  const prediction = p.v1*h1 + p.v2*h2 + p.b3;
+  return {h1,h2,prediction,e:prediction-y};
+}
+function loss(p) {
+  return data.reduce((sum, row) => sum + forward(p,row).e ** 2, 0) / (2*data.length);
+}
+function derivatives(p, row) {
+  const [x1,x2] = row;
+  const {h1,h2,e} = forward(p,row);
+  const d1 = e*p.v1*(1-h1**2), d2 = e*p.v2*(1-h2**2);
+  return {w11:d1*x1,w12:d1*x2,b1:d1,w21:d2*x1,w22:d2*x2,b2:d2,v1:e*h1,v2:e*h2,b3:e};
+}
+function gradient(p) {
+  const contributions = data.map(row => derivatives(p,row));
+  return Object.fromEntries(names.map(name => [
+    name, contributions.reduce((sum, row) => sum + row[name], 0)/data.length
+  ]));
+}
+function update(p, grad, rate) {
+  return Object.fromEntries(names.map(name => [name, p[name]-rate*grad[name]]));
+}
+let params = {...initial};
+let history = [loss(params)];
+$("parameter").innerHTML = names.map(name => '<option>'+name+'</option>').join("");
+
+function rowHtml(values, className="") {
+  return '<tr class="'+className+'">'+values.map(v=>'<td>'+v+'</td>').join("")+'</tr>';
+}
+function chart(svg, {height, xMin, xMax, yMin, yMax, series, xLabel, yLabel, yFormat, xDigits=2}) {
+  const left=75, right=580, top=16, bottom=height-48;
+  const x = v => left+(right-left)*(v-xMin)/(xMax-xMin);
+  const y = v => bottom-(bottom-top)*(v-yMin)/(yMax-yMin);
+  const position = ([a,b]) => x(a).toFixed(2)+","+y(b).toFixed(2);
+  const id = svg.id+"-clip";
+  let markup = '<defs><clipPath id="'+id+'"><rect x="'+left+'" y="'+top+'" width="'+(right-left)+'" height="'+(bottom-top)+'"/></clipPath></defs>';
+  markup += '<rect x="'+left+'" y="'+top+'" width="'+(right-left)+'" height="'+(bottom-top)+'" fill="#f8faf7"/>';
+  for (let i=0;i<=4;i++) {
+    const a=xMin+(xMax-xMin)*i/4, b=yMin+(yMax-yMin)*i/4;
+    markup += '<path d="M'+left+','+y(b)+'H'+right+'" stroke="#d4dfdd"/>';
+    markup += '<text x="'+(left-7)+'" y="'+(y(b)+4)+'" text-anchor="end">'+yFormat(b)+'</text>';
+    markup += '<text x="'+x(a)+'" y="'+(bottom+19)+'" text-anchor="middle">'+fmt(a,xDigits)+'</text>';
+  }
+  markup += '<g clip-path="url(#'+id+')">';
+  for (const {points,color,dash="",dots=[]} of series) {
+    markup += '<polyline fill="none" stroke="'+color+'" stroke-width="2.5" stroke-dasharray="'+dash+'" points="'+points.map(position).join(" ")+'"/>';
+    for (const [a,b] of dots) markup += '<circle cx="'+x(a)+'" cy="'+y(b)+'" r="4" fill="'+color+'" stroke="#fff"/>';
+  }
+  markup += '</g><text x="'+((left+right)/2)+'" y="'+(height-7)+'" text-anchor="middle">'+xLabel+'</text>';
+  markup += '<text x="15" y="'+((bottom+top)/2)+'" text-anchor="middle" transform="rotate(-90 15 '+((bottom+top)/2)+')">'+yLabel+'</text>';
+  svg.innerHTML = '<g font-size="13" fill="#4d6470">'+markup+'</g>';
+}
+function drawSlice(name) {
+  const offset = Number($("probe").value), h=Number($("epsilon").value);
+  const center = params[name], theta = center+offset;
+  const probe = {...params,[name]:theta};
+  const at = value => loss({...params,[name]:value});
+  const value = loss(probe);
+  const slope = gradient(probe)[name];
+  const left = at(theta-h), right = at(theta+h);
+  const secant = (right-left)/(2*h);
+  const xMin=center-1.8, xMax=center+1.8;
+  const curve=Array.from({length:101},(_,i)=>{
+    const x=xMin+(xMax-xMin)*i/100;
+    return [x,at(x)];
+  });
+  const tangent = [[theta-.8,value-.8*slope],[theta+.8,value+.8*slope]];
+  const sec = [[theta-h,left],[theta+h,right]];
+  const values = [...curve,...tangent,...sec,[theta,value]].map(point=>point[1]);
+  const low=Math.min(...values), high=Math.max(...values);
+  const padding=Math.max((high-low)*.1,1e-10);
+  chart($("slice"),{height:280,xMin,xMax,yMin:low-padding,yMax:high+padding,xLabel:name,yLabel:"Pérdida",yFormat:v=>fmt(v,3),series:[
+    {points:curve,color:"#006c5a",dots:[[theta,value]]},
+    {points:tangent,color:"#a44721",dash:"7 5"},
+    {points:sec,color:"#6c4ca1",dash:"2 4",dots:sec}
+  ]});
+  show("offset",fmt(offset,2));
+  show("spacing",fmt(h,2));
+  show("point",fmt(theta));
+  show("slope",fmt(slope));
+  show("secant",fmt(secant));
+  show("direction",Math.abs(slope)<1e-10 ? "En este punto la pendiente es prácticamente cero." :
+    "Según la tangente, "+(slope<0?"aumentar":"disminuir")+" un poco "+name+" reduce localmente la pérdida.");
+  show("chain","∂ℓ / ∂"+name+" = "+formulas[name]);
+  $("contributions").innerHTML=data.map(row=>rowHtml([
+    "("+row[0]+", "+row[1]+")",fmt(forward(probe,row).e),fmt(derivatives(probe,row)[name])
+  ])).join("");
+}
+function drawTraining(name) {
+  const rate=Number($("rate").value), grad=gradient(params);
+  const next=update(params,grad,rate);
+  show("rateValue",fmt(rate,2));
+  show("epoch",String(history.length-1));
+  show("currentLoss",fmt(history.at(-1),7));
+  show("nextLoss",fmt(loss(next),7));
+  $("weights").innerHTML=names.map(k=>rowHtml([
+    k,fmt(params[k]),fmt(grad[k]),fmt(next[k])
+  ],name===k?"selected":"")).join("");
+  $("predictions").innerHTML=data.map(row=>rowHtml([
+    "("+row[0]+", "+row[1]+")",row[2],fmt(forward(params,row).prediction)
+  ])).join("");
+}
+function drawHistory() {
+  const every=Math.max(1,Math.ceil(history.length/450));
+  const points=[];
+  let low=Infinity, high=-Infinity;
+  history.forEach((value,i)=>{
+    const level=Math.log10(Math.max(value,1e-16));
+    low=Math.min(low,level);
+    high=Math.max(high,level);
+    if (i%every===0 || i===history.length-1) points.push([i,level]);
+  });
+  chart($("history"),{height:220,xMin:0,xMax:Math.max(4,4*Math.ceil((history.length-1)/4)),xDigits:0,yMin:Math.floor(low)-.1,
+    yMax:Math.ceil(high)+.1,xLabel:"Época",yLabel:"Pérdida",yFormat:v=>(10**v).toExponential(1),
+    series:[{points,color:"#006c5a",dots:[points.at(-1)]}]});
+}
+function render() {
+  const name=$("parameter").value;
+  drawSlice(name);
+  drawTraining(name);
+  drawHistory();
+}
+function train(count) {
+  const rate=Number($("rate").value), start=history.at(-1);
+  for (let i=0;i<count;i++) {
+    const next=update(params,gradient(params),rate), value=loss(next);
+    if (!Number.isFinite(value) || value>1e8) {
+      show("status","El entrenamiento se detuvo por divergencia. Reduce η o reinicia.");
+      render();
+      return;
+    }
+    params=next;
+    history.push(value);
+  }
+  const end=history.at(-1);
+  show("status","Pérdida "+(end<start?"bajó":end>start?"subió":"se mantuvo")+" de "+fmt(start,7)+" a "+fmt(end,7)+".");
+  render();
+}
+$("parameter").addEventListener("change",render);
+for (const id of ["probe","epsilon"]) $(id).addEventListener("input",()=>drawSlice($("parameter").value));
+$("rate").addEventListener("input",()=>drawTraining($("parameter").value));
+$("step").addEventListener("click",()=>train(1));
+$("train").addEventListener("click",()=>train(100));
+$("reset").addEventListener("click",()=>{
+  params={...initial};
+  history=[loss(params)];
+  $("parameter").value="w11";
+  $("probe").value=0;
+  $("epsilon").value=.35;
+  $("rate").value=.1;
+  show("status","Red reiniciada a los parámetros del ejemplo en Python.");
+  render();
+});
+show("status","La red comienza en la época 0.");
+render();
+</script>
+</body>
+</html>
